@@ -1,77 +1,66 @@
 package main
 
 import (
-	"fmt"
+	"math"
+	"math/rand"
+	"time"
 )
 
 const (
-	NodeNumber     = 4
+	MinersNumber   = 4
+	AttackerNumber = 1
+	MonitorNumber  = 1
 	MaxChannelSize = 1000
+	Interval       = 1000 // ms
 )
 
-// Define your message's struct here
-type Message struct {
-	sender uint64
-}
 
-// May need other fields
-type Node struct {
-	id          uint64
-	peers       map[uint64]chan Message
-	receiveChan chan Message
-}
-
-func NewNode(id uint64, peers map[uint64]chan Message, recvChan chan Message) *Node {
-	return &Node{
-		id:          id,
-		peers:       peers,
-		receiveChan: recvChan,
-	}
-}
-
-// Run start one consensus node, remember to start one thread for receiving messages (n.Receive())
-func (n *Node) Run() {
-	fmt.Println("start node : ", n.id)
-	go n.Receive()
-
-	n.Broadcast(Message{sender : n.id})
-}
-
-func (n *Node) Receive() {
-	for {
-		select {
-		case msg := <-n.receiveChan:
-			n.handler(msg)
-		}
-	}
-}
-
-func (n *Node) handler(msg Message) {
-	fmt.Println("Node", n.id, "received message from node", msg.sender)
-}
-
-func (n *Node) Broadcast(msg Message) {
-	for id, ch := range n.peers {
-		if id == n.id {
-			continue
-		}
-		ch <- msg
-	}
+// 制造一个创世区块
+func CreateGenesisBlock(data string) *Block {
+	genesisBlock := new(Block)
+	genesisBlock.UnixMilli = time.Now().UnixMilli()
+	genesisBlock.Data = data
+	genesisBlock.MinerId = math.MaxUint64
+	genesisBlock.LastHash = "0000000000000000000000000000000000000000000000000000000000000000"
+	genesisBlock.Height = 1
+	genesisBlock.Nonce = 0
+	genesisBlock.Target = 19
+	genesisBlock.getHash()
+	return genesisBlock
 }
 
 func main() {
-	nodes := make([]*Node, NodeNumber)
-	peers := make(map[uint64]chan Message)
-	for i := 0; i < NodeNumber; i++ {
-		peers[uint64(i)] = make(chan Message, MaxChannelSize)
+	// random seed
+	rand.Seed(time.Now().Unix())
+
+	nodes := make([]*Node, MinersNumber)
+	attackers := make([]*Attacker, AttackerNumber)
+	peers := make(map[uint64]chan Block)
+	for i := 0; i < MinersNumber+AttackerNumber+MonitorNumber; i++ {
+		peers[uint64(i)] = make(chan Block, MaxChannelSize)
 	}
-	for i := uint64(0); i < NodeNumber; i++ {
-		nodes[i] = NewNode(i, peers, peers[i])
+	genesisBlock := CreateGenesisBlock("IS416 HHJ")
+	for i := uint64(0); i < MinersNumber; i++ {
+		nodes[i] = NewNode(i, *genesisBlock, peers, peers[i])
+		peers[i] <- *genesisBlock
 	}
+	cahoots := make(map[uint64]chan ConspiratorialTarget)
+	for i := uint64(0); i < AttackerNumber; i++ {
+		cahoots[uint64(i)] = make(chan ConspiratorialTarget, MaxChannelSize)
+	}
+	for i := uint64(0); i < AttackerNumber; i++ {
+		attackers[i] = NewAttacker(i+MinersNumber, i, *genesisBlock, peers, peers[i+MinersNumber], cahoots, cahoots[i])
+		peers[i+MinersNumber] <- *genesisBlock
+	}
+	monitor := NewMonitor(0, *genesisBlock, peers, peers[MinersNumber+AttackerNumber])
+	go monitor.Run()
 
 	// start all nodes
-	for i := 0; i < NodeNumber; i++ {
+	for i := 0; i < MinersNumber; i++ {
 		go nodes[i].Run()
+	}
+	for i := 0; i < AttackerNumber; i++ {
+		go attackers[i].Run()
 	}
 
 	// block to wait for all nodes' threads
