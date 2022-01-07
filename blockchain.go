@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"math/big"
+	"math/rand"
+	"time"
 )
 
 // Define your message's struct here
@@ -119,11 +122,15 @@ func (bc *BlockChain) append(b *Block) bool {
 }
 
 func (bc *BlockChain) statistics(n *BlockChainNode) int64 {
-	if n.block.Height < 3 {
-		return 2*Interval
+	if n.block.Height < IntervalNum+1 {
+		return IntervalNum*Interval
 	}
 	cur := n.block.UnixMilli
-	lst := n.parent.parent.block.UnixMilli
+	lstPtr := n
+	for i:=0; i<IntervalNum; i++ {
+		lstPtr = lstPtr.parent
+	}
+	lst := lstPtr.block.UnixMilli
 	return cur - lst
 }
 
@@ -152,7 +159,7 @@ func (bc *BlockChain) print() {
 	fmt.Print("===============================\n")
 }
 
-func (bc *BlockChain) printAll() {
+func (bc *BlockChain) formatPrintAll() {
 	fmt.Print("===============================\n")
 	stack := NewStack()
 	stack.Push(bc.root)
@@ -167,4 +174,30 @@ func (bc *BlockChain) printAll() {
 		}
 	}
 	fmt.Print("===============================\n")
+}
+
+// 制造一个创世区块
+func CreateGenesisBlock(data string) *Block {
+	genesisBlock := new(Block)
+	genesisBlock.UnixMilli = time.Now().UnixMilli()
+	genesisBlock.Data = data
+	genesisBlock.MinerId = math.MaxUint64
+	genesisBlock.LastHash = "0000000000000000000000000000000000000000000000000000000000000000"
+	genesisBlock.Height = 1
+	genesisBlock.Nonce = rand.Int63()
+	genesisBlock.Target = 19
+	newBigInt := big.NewInt(1)
+	newBigInt.Lsh(newBigInt, 256-genesisBlock.Target)
+	for {
+		genesisBlock.getHash()
+		hashInt := big.Int{}
+		hashBytes, _ := hex.DecodeString(genesisBlock.Hash)
+		hashInt.SetBytes(hashBytes)
+		if hashInt.Cmp(newBigInt) == -1 {
+			break
+		} else {
+			genesisBlock.Nonce++
+		}
+	}
+	return genesisBlock
 }

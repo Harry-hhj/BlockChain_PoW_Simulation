@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	// "strings"
 )
 
 // May need other fields
@@ -94,11 +95,14 @@ func (n *Node) Mine() *Block {
 	// calculate difficulty
 	newBlock.Target = lastBlock.Target
 	n.blockChainMutex.RUnlock()
-	if ((newBlock.Height-1)%2 == 0) && (newBlock.Height >= 4) {
+	if ((newBlock.Height-1)%IntervalNum == 0) && (newBlock.Height != 0) {
+		n.blockChainMutex.RLock()
 		interval := n.blockChain.statistics(n.blockChain.workspace)
-		if interval < 0.8*2*Interval {
+		n.blockChainMutex.RUnlock()
+		// fmt.Printf("INTERVAL = %d\n", interval)
+		if interval < 0.9*IntervalNum*Interval {
 			newBlock.Target += 1
-		} else if interval > 1.2*2*Interval {
+		} else if interval > 1.1*IntervalNum*Interval {
 			newBlock.Target -= 1
 		}
 	}
@@ -133,9 +137,10 @@ func (n *Node) Mine() *Block {
 type MsgType uint
 
 const (
-	Init MsgType = iota
-	Acknowdge
-	Decline
+	INIT MsgType = iota
+	CONTINUE
+	ACKNOWLEGGE
+	RECLINE
 )
 
 type ConspiratorialTarget struct {
@@ -182,7 +187,15 @@ func (a *Attacker) Run() {
 	fmt.Println("start attacker : ", a.id)
 	go a.Receive()
 
-	time.Sleep(time.Millisecond * 1500)
+	// time.Sleep(time.Millisecond * 1500)
+	for {
+		a.blockChainMutex.RLock()
+		if a.blockChain.maxHeight >= 100 {
+			a.blockChainMutex.RUnlock()
+			break
+		}
+		a.blockChainMutex.RUnlock()
+	}
 	for {
 		newBlock := a.Attack()
 		if newBlock == nil {
@@ -195,7 +208,8 @@ func (a *Attacker) Run() {
 		a.targetMutex.Lock()
 		a.target = a.blockChain.search(newBlock)
 		a.targetMutex.Unlock()
-		fmt.Println("Attacker find : ", newBlock)
+		a.polt(ConspiratorialTarget{a.target.block, CONTINUE})
+		// fmt.Println("Attacker find : ", newBlock)
 	}
 }
 
@@ -234,16 +248,30 @@ func (a *Attacker) handler(msg Block) {
 }
 
 func (a *Attacker) shandler(msg ConspiratorialTarget) {
-	if msg.msgType == Init {
+	if (msg.msgType == INIT) || (msg.msgType == CONTINUE) {
 		a.blockChainMutex.RLock()
 		a.targetMutex.Lock()
-		a.target = a.blockChain.search(msg.target)
+		newTarget := a.blockChain.search(msg.target)
+		if newTarget == nil {
+			a.targetMutex.Unlock()
+			a.blockChainMutex.RUnlock()
+			return
+		} else {
+			// fmt.Print("GOT TARGET!!!!!!!!!!!!\n")
+		}
+		var flag bool = false
+		if a.target.block.Hash != newTarget.block.Hash {
+			a.target = newTarget
+			flag = true
+		}
 		a.targetMutex.Unlock()
 		a.blockChainMutex.RUnlock()
-		a.requestMutex.Lock()
-		a.request = true
-		a.requestMutex.Unlock()
-	} else if msg.msgType == Decline {
+		if flag {
+			a.requestMutex.Lock()
+			a.request = true
+			a.requestMutex.Unlock()
+		}
+	} else if msg.msgType == RECLINE {
 		a.votes++
 		if a.votes >= 1/2*AttackerNumber {
 			a.blockChainMutex.RLock()
@@ -287,9 +315,9 @@ func (a *Attacker) Attack() *Block {
 		interval := a.blockChain.statistics(a.target)
 		a.targetMutex.RUnlock()
 		a.blockChainMutex.RUnlock()
-		if interval < 0.8*2*Interval {
+		if interval < 0.9*IntervalNum*Interval {
 			newBlock.Target += 1
-		} else if interval > 1.2*2*Interval {
+		} else if interval > 1.1*IntervalNum*Interval {
 			newBlock.Target -= 1
 		}
 	}
@@ -304,11 +332,11 @@ func (a *Attacker) Attack() *Block {
 			a.update = false
 			a.flagMutex.Unlock()
 			a.blockChainMutex.RLock()
-			if a.blockChain.maxHeight > newBlock.Height {
-				fmt.Printf("Attacker %d CHOOSE TARGET!\n", a.secret_id)
+			if a.blockChain.maxHeight > newBlock.Height+1 {
+				// fmt.Printf("Attacker %d CHOOSE TARGET!\n", a.secret_id)
 				a.targetMutex.Lock()
 				a.target = a.blockChain.workspace.parent
-				a.polt(ConspiratorialTarget{a.target.block, Init})
+				a.polt(ConspiratorialTarget{a.target.block, INIT})
 				a.targetMutex.Unlock()
 				a.blockChainMutex.RUnlock()
 				return nil
@@ -338,7 +366,7 @@ func (a *Attacker) Attack() *Block {
 			nonce++ // 不满足条件，则不断递增随机数，直到本区块的散列值小于指定的大数
 		}
 	}
-	if !newBlock.IsValid(){
+	if !newBlock.IsValid() {
 		fmt.Println("NewBlock is invalid")
 	}
 	return newBlock
@@ -376,5 +404,34 @@ func (m *Monitor) Receive() {
 
 func (m *Monitor) handler(msg Block) {
 	m.blockChain.append(&msg)
-	m.blockChain.printAll()
+	// fmt.Printf("Avg Speed : %f ms/block.\n", float64(m.blockChain.workspace.block.UnixMilli-m.blockChain.root.block.UnixMilli)/float64(m.blockChain.maxHeight-1))
+	// fmt.Println(m.blockChain.workspace.block.Target)
+	fmt.Printf("%f\t%d\n", float64(m.blockChain.workspace.block.UnixMilli-m.blockChain.root.block.UnixMilli)/float64(m.blockChain.maxHeight-1), m.blockChain.workspace.block.Target)
+	// m.blockChain.print()
+	// m.blockChain.formatPrintAll()
+
+	// var try float32 = 0
+	// var success float32 = 0
+
+	// stack := NewStack()
+	// stack.Push(m.blockChain.root)
+	// for !stack.IsEmpty() {
+	// 	cbcn := stack.Pop()
+	// 	if strings.Contains(cbcn.block.Data, "攻击者") {
+	// 		try++
+	// 	}
+	// 	for _, bcn := range cbcn.childs {
+	// 		stack.Push(bcn)
+	// 	}
+	// }
+	// tmp := m.blockChain.workspace
+	// for tmp.parent != nil {
+	// 	if strings.Contains(tmp.block.Data, "攻击者") {
+	// 		success++
+	// 	}
+	// 	tmp = tmp.parent
+	// }
+	// if try != 0 {
+	// 	fmt.Printf("Current height = %d, total try = %f, total success = %f, Avg success rate = %f\n", m.blockChain.maxHeight, try, success, success/try)
+	// }
 }
