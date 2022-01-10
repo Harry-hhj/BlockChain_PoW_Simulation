@@ -27,7 +27,7 @@
 
 对于工作量证明函数，比特币系统中使用的工作量证明函数是 SHA256 ，目前为止，还没有出现对SHA256 的有效攻击，这也是这次试验中使用的哈希函数。对于区块，是存储数据的地方。比特币的区块由区块头及该区块所包含的交易列表组成，其中区块头是工作量证明的输入字符串，而交易列表不是。因此，我们需要让区块头能体现交易列表，使得篡改交易列表是不可能的。为此，使用 Merkle Tree 算法生成 Merkle Root Hash ，并为此作为交易列表的摘要，加入到区块头中。Merkle Tree 的算法示意图如下：
 
-<img src="Final%20Lab%20ChainBlock-PoW.assets/555.png" alt="img" style="zoom:80%;" />
+<img src="Final%20Lab%20BlockChain-PoW.assets/555.png" alt="img" style="zoom:80%;" />
 
 但是，我们在本次实验中不考虑如此复杂的结构，仅使用 `data` 作为区块头中的数据字段。对于难度值，它决定了矿工大约需要经过多少次哈希运算才能产生一个合法的区块。难度值必须根据全网算力的变化进行调整，比特币规定新区块产生的速率都保持在 10 分钟一个。注意，当区块产生速度增大，即交易吞吐量增加时，新区块的产生速率仍然是有上限的，即网络的时延。试想一下，当一个区块的产生速率大于这个区块被广播到最远节点的网络延时，那么必然会存在不同的视图（即同一时刻存在两个最长的链），这会导致算力的分散（即两组矿工在不同的最长链上挖矿），在特殊情况下，之后提到的 51% 攻击将会变成 26% 攻击，这使得区块链的安全性降低。难度值直观理解就是规定了生成的哈希开头有多少个 0 ，由于不存在比遍历更好的方法，因此我们可以估算出需要进行的计算次数，这就是为什么哈希可以提现工作量。注意此题是一定有解的，不同矿工可以从不同的随机值开始遍历，这就是之前提到的运气因素，一个好的起点可能和结果很接近，所花的时间也更少。
 
@@ -108,7 +108,7 @@ type BlockChain struct {
 
 注意到，我们为 `BlockChain` 定义了一个 `index map[uint64][]*BlockChainNode` ，将 `Height` 映射到 `[]*BlockChainNode` ，这是为了实现快速的索引。一方面，它能够快速找到新收到的区块的父节点（还需要判断是否已添加），另一方面，它也更适合攻击者选择最容易分叉的节点（最长链的长度少一的不属于这条链的任意一个节点）。
 
-![IS416.drawio](Final%20Lab%20ChainBlock-PoW.assets/IS416.drawio.png)
+![IS416.drawio](Final%20Lab%20BlockChain-PoW.assets/IS416.drawio.png)
 
 为了实现区块链的常见操作，我们定义了以下函数：
 
@@ -219,7 +219,7 @@ func (a *Attacker) Attack() *Block  // 产生分叉区块
 
 在矿工 10 ，恶意节点 4 的情况下，系统监听员记录的区块链增长速度和难度变化值：
 
-![fig1](Final%20Lab%20ChainBlock-PoW.assets/fig1.jpg)
+![fig1](Final%20Lab%20BlockChain-PoW.assets/fig1.jpg)
 
 无论节点是否恶意，都会遵守工作量证明机制。可以看到，当系统区域稳定后，时间的变化幅度在 10% 以内，考虑到单机仿真的不确定性，这个结果是良好的。
 
@@ -227,7 +227,7 @@ func (a *Attacker) Attack() *Block  // 产生分叉区块
 
 我们让良性矿工和攻击者节点各减半，观察到图 2 。
 
-![fig2](Final%20Lab%20ChainBlock-PoW.assets/fig2.jpg)
+![fig2](Final%20Lab%20BlockChain-PoW.assets/fig2.jpg)
 
 同样系统也会趋于稳定
 
@@ -240,7 +240,7 @@ func (a *Attacker) Attack() *Block  // 产生分叉区块
 | 30%            | 304                | 130                | 42.76%         |
 | 40%            | 401                | 190                | 47.38%         |
 
-![fig3](Final%20Lab%20ChainBlock-PoW.assets/fig3.jpg)
+![fig3](Final%20Lab%20BlockChain-PoW.assets/fig3.jpg)
 
 随着恶意节点数的增大，恶意节点尝试攻击的次数增大，成功的次数增大，成功的概率也增大。
 
